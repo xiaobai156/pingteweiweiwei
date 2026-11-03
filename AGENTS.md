@@ -45,6 +45,7 @@
 ### 3.3 配置、缓存和测试
 - 正式缓存：`recent_10_cache.json`。
 - 缓存备份：`recent_10_cache.json.bak`。
+- 唯一推送位置：`https://github.com/xiaobai156/pingteweiweiwei.git`（origin / main）。不得再推送到其他远程仓库。
 ### 3.4 正式输出
 - 成功：`M.D平特尾.txt`。
 - 失败：`M.D平特尾失败.txt`。
