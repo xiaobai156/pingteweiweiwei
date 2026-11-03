@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from config_fixtures import all_targets, raw_items
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,6 +77,25 @@ class ArchitectureContractTests(unittest.TestCase):
             if "/article/admin/" in target.url or "/article/manager/" in target.url:
                 self.assertEqual(record_id_from_url(target.url), target.record_id)
 
+    def test_archived_config_is_disjoint_from_active_config(self):
+        active = json.loads((ROOT / "targets.json").read_text(encoding="utf-8-sig"))
+        archived = json.loads((ROOT / "archived_targets.json").read_text(encoding="utf-8-sig"))
+        active_ids = {item["target_id"] for item in active}
+        active_labels = {item["label"] for item in active}
+        archived_ids = {item["target_id"] for item in archived}
+        archived_labels = {item["label"] for item in archived}
+
+        self.assertEqual(len(active_ids), len(active))
+        self.assertEqual(len(archived_ids), len(archived))
+        self.assertFalse(active_ids & archived_ids)
+        self.assertFalse(active_labels & archived_labels)
+        self.assertEqual(191, len(active) + len(archived))
+        for site in archived:
+            with self.subTest(label=site["label"]):
+                self.assertEqual(site["parser_id"], f"site.{site['target_id']}")
+                self.assertTrue(site.get("archived_reason"))
+                self.assertTrue(site.get("archived_at"))
+
     def test_unregistered_parser_id_is_rejected(self):
         from ptw.domain.models import Target
         from ptw.parsing.registry import registry
@@ -98,7 +119,7 @@ class ArchitectureContractTests(unittest.TestCase):
         from ptw.config import load_targets
         from ptw.domain.validation import validate_target
 
-        target = next(item for item in load_targets(ROOT / "targets.json") if item.mode == "manager_article_tail")
+        target = next(item for item in all_targets() if item.mode == "manager_article_tail")
         required = {
             "record_id": "动态详情页缺少record_id",
             "record_author": "Manager文章缺少record_author",
@@ -113,8 +134,7 @@ class ArchitectureContractTests(unittest.TestCase):
     def test_dynamic_record_id_mismatch_fails_configuration_load(self):
         from ptw.config import load_targets
 
-        targets = json.loads((ROOT / "targets.json").read_text(encoding="utf-8"))
-        manager = next(item for item in targets if item["mode"] == "manager_article_tail")
+        manager = next(item for item in raw_items() if item["mode"] == "manager_article_tail")
         manager["record_id"] = "not-the-url-record"
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "targets.json"
@@ -208,6 +228,63 @@ class ArchitectureContractTests(unittest.TestCase):
             before = path.read_bytes()
             self.assertFalse(update_one(path, target, "210", "9尾"))
             self.assertEqual(before, path.read_bytes())
+
+    def test_partial_cache_preserves_unselected_sites(self):
+        from ptw.domain.models import Target
+        from ptw.storage.cache import _new_site, update_recent_10_cache_partial
+
+        selected = Target(
+            "https://example.test/a",
+            "顶部",
+            "甲",
+            "甲",
+            "site_dedicated_tail",
+            target_id="ptw_1111111111111111",
+            parser_id="site.ptw_1111111111111111",
+        )
+        unselected = Target(
+            "https://example.test/b",
+            "底部",
+            "乙",
+            "乙",
+            "site_dedicated_tail",
+            target_id="ptw_2222222222222222",
+            parser_id="site.ptw_2222222222222222",
+        )
+        selected_entry = _new_site(selected)
+        selected_entry["values"] = {"266": "1尾"}
+        unselected_entry = _new_site(unselected)
+        unselected_entry["values"] = {"266": "8尾", "265": "7尾"}
+        cache = {
+            "schema": 2,
+            "window_size": 10,
+            "issues": [266, 265],
+            "sites": [selected_entry, unselected_entry],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "recent_10_cache.json"
+            path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+            self.assertTrue(
+                update_recent_10_cache_partial([selected], ["3尾 甲"], "267", path)
+            )
+            updated = json.loads(path.read_text(encoding="utf-8-sig"))
+            self.assertEqual({"266": "1尾", "267": "3尾"}, updated["sites"][0]["values"])
+            self.assertEqual(unselected_entry, updated["sites"][1])
+            self.assertEqual([267, 266, 265], updated["issues"])
+            self.assertFalse(path.with_suffix(".json.bak").exists())
+
+    def test_no_backup_pair_write_preserves_existing_files_without_bak(self):
+        from ptw.storage.atomic import atomic_write_pair_without_backup
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = Path(temp_dir) / "success.txt"
+            second = Path(temp_dir) / "failure.txt"
+            first.write_text("old success", encoding="utf-8")
+            second.write_text("old failure", encoding="utf-8")
+            atomic_write_pair_without_backup(first, "new success", second, "new failure")
+            self.assertEqual("new success", first.read_text(encoding="utf-8"))
+            self.assertEqual("new failure", second.read_text(encoding="utf-8"))
+            self.assertEqual([], list(Path(temp_dir).glob("*.bak*")))
 
     def test_multi_issue_service_declares_cache_read_only(self):
         from ptw.services.multi_issue import MultiIssueService

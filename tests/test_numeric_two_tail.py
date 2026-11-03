@@ -1,5 +1,6 @@
 import unittest
 
+from config_fixtures import all_targets
 from ptw.config import load_targets
 from ptw.domain.models import Target
 from ptw.parsing.pipeline import extract_result_from_text
@@ -71,7 +72,7 @@ class NumericTwoTailParserTests(unittest.TestCase):
 
     def test_verified_targets_use_numeric_two_tail_mode(self):
         labels = {"步步登高", "裁长补短", "无肠可断"}
-        targets = {target.label: target for target in load_targets() if target.label in labels}
+        targets = {target.label: target for target in all_targets() if target.label in labels}
 
         self.assertEqual(labels, set(targets))
         self.assertTrue(all(target.mode == "numeric_two_tail" for target in targets.values()))

@@ -307,6 +307,19 @@ def audit_result_from_text(text: str, issue: str, target: Target) -> AuditRecord
         best_score = max(failure_score(record) for record in records)
         best = [record for record in records if failure_score(record) == best_score]
         return best[-1] if target.position in {"尾部", "tail", "bottom", "下"} else best[0]
+    if (
+        len(successful) > 1
+        and target.mode == "top_priority_conflict"
+        and target.position in {"顶部", "top", "上"}
+        and len({record.result for record in successful}) > 1
+    ):
+        selected = successful[0]
+        return replace(
+            selected,
+            risk_flags=tuple(
+                dict.fromkeys((*selected.risk_flags, "TOP_PRIORITY_CONFLICT_SELECTED"))
+            ),
+        )
     selected = successful[-1] if target.position in {"尾部", "tail", "bottom", "下"} else successful[0]
     if len(successful) > 1:
         flags = tuple(dict.fromkeys((*selected.risk_flags, "MULTIPLE_DOCUMENT_CANDIDATES")))
@@ -314,6 +327,7 @@ def audit_result_from_text(text: str, issue: str, target: Target) -> AuditRecord
             flags = tuple(dict.fromkeys((*flags, "CROSS_DOCUMENT_CONFLICT")))
         return replace(selected, result="", risk_flags=flags)
     return selected
+
 
 
 def extract_result_from_text(

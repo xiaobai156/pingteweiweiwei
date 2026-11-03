@@ -2,7 +2,6 @@ import re
 
 from ptw.domain.models import ParseResult, Target
 
-
 TARGET_ID_PATTERN = re.compile(r"^ptw_[a-f0-9]{16}$")
 VALID_POSITIONS = {"顶部", "尾部", "top", "tail", "bottom", "上", "下"}
 SUPPORTED_MODES = {
@@ -18,6 +17,7 @@ SUPPORTED_MODES = {
     "strict_issue_tail",
     "sanxiancai",
     "shenqi_macau",
+    "top_priority_conflict",
     "hongyun",
     "manager_article_tail",
 }
@@ -61,9 +61,8 @@ def validate_target(target: Target, source: str) -> None:
         raise ValueError(f"{source} parser_id未与target_id专属绑定")
     if not isinstance(target.rule_version, int) or target.rule_version < 1:
         raise ValueError(f"{source} rule_version必须是正整数")
-    if "/article/admin/" in target.url or "/article/manager/" in target.url:
-        if not target.record_id:
-            raise ValueError(f"{source} 动态详情页缺少record_id")
+    if ("/article/admin/" in target.url or "/article/manager/" in target.url) and not target.record_id:
+        raise ValueError(f"{source} 动态详情页缺少record_id")
     if "/article/admin/" in target.url:
         required = {
             "record_author": target.record_author,

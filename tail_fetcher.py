@@ -16,6 +16,7 @@ from ptw.parsing.pipeline import (
 from ptw.services.single_issue import SingleIssueDependencies, run_single_issue
 from ptw.storage.atomic import (
     atomic_write_pair_with_backup,
+    atomic_write_success_optional_failure,
     atomic_write_with_backup,
 )
 from ptw.storage.cache import update_recent_10_cache as _cache_update
@@ -59,7 +60,7 @@ def run(
         dated_files=lambda: dated_output_files(output_dir=OUTPUT_DIR),
         format_progress=format_progress_line,
         log=log,
-        atomic_write_pair=atomic_write_pair_with_backup,
+        atomic_write_pair=atomic_write_success_optional_failure,
         commit=partial(_commit_single_issue, update_recent_10_cache),
     )
     return run_single_issue(issue, output_path, fail_path, update_cache, dependencies)

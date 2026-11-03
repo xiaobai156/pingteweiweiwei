@@ -6,8 +6,8 @@ from ptw.domain.validation import SUPPORTED_MODES
 from ptw.parsing.primitives import (
     extract_caimin_shuji_tail,
     extract_explicit_two_tail,
-    extract_numeric_two_tail,
     extract_next_line_bracket_tail,
+    extract_numeric_two_tail,
     extract_open_number_tail,
     extract_phrase,
     extract_sanxiancai,
@@ -84,6 +84,12 @@ def extract_value_by_mode(window: str, issue: str, target: Target) -> str:
         "strict_issue_tail": lambda: extract_strict_issue_tail(window, issue),
         "sanxiancai": lambda: extract_sanxiancai(window, issue),
         "shenqi_macau": lambda: extract_shenqi_macau(window, issue),
+        "top_priority_conflict": lambda: extract_site_dedicated_tail(
+            window,
+            issue,
+            keyword,
+            allow_formula=target.value_policy != "explicit_tail_only",
+        ),
         "phrase": lambda: extract_phrase(window),
         "tail": lambda: extract_tail(window),
         "tail_after_issue": lambda: extract_tail(window),

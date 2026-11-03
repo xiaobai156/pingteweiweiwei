@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
+from config_fixtures import target_by_label
 from ptw.config import load_targets
 from ptw.domain.models import AuditRecord, Target
 from ptw.domain.validation import is_publishable
@@ -481,7 +482,10 @@ class ExtractResultTests(unittest.TestCase):
                 encoding="utf-8",
             )
             before = cache.read_bytes()
-            with patch("ptw.storage.transaction.atomic_write_pair_with_backup", side_effect=OSError("output failed")):
+            with patch(
+                "ptw.storage.transaction.atomic_write_success_optional_failure",
+                side_effect=OSError("output failed"),
+            ):
                 with self.assertRaises(OSError):
                     commit_single_issue(
                         lambda targets, results, issue: update_recent_10_cache(
@@ -1080,7 +1084,7 @@ class ExtractResultTests(unittest.TestCase):
             self.assertIn("多个不同显式尾数", fail_path.read_text(encoding="utf-8"))
 
     def test_hongyun_uses_exact_module_title(self):
-        target = next(item for item in load_targets() if item.label == "鸿运")
+        target = target_by_label("鸿运")
         self.assertEqual(target.keyword, "澳门鸿运『平特一尾』")
         self.assertEqual(target.mode, "hongyun")
 
@@ -1113,7 +1117,7 @@ class ExtractResultTests(unittest.TestCase):
         record = audit_result_from_text(
             text,
             "170",
-            next(item for item in load_targets() if item.label == "鸿运"),
+            target_by_label("鸿运"),
         )
         self.assertEqual("", record.result)
         self.assertIn("MULTIPLE_TAIL_CANDIDATES", record.risk_flags)
@@ -1971,7 +1975,21 @@ class ExtractResultTests(unittest.TestCase):
             "4尾 彩民书籍",
         )
 
+    def test_caimin_shuji_target_reads_rendered_pingte_tail(self):
+        target = target_by_label("彩民书籍")
+        text = """
+        267期（平特一尾）20中11（全网独有）
+        267期 平特4尾
+        """
+        self.assertEqual(target.mode, "site_dedicated_tail")
+        self.assertEqual(target.rule_version, 2)
+        self.assertEqual(
+            extract_result_from_text(text, "267", target.label, keyword=target.keyword, position=target.position, mode=target.mode),
+            "4尾 彩民书籍",
+        )
+
     def test_taxue_uses_precise_gui_lu_yi_wei_module(self):
+
         text = """
 184期:踏雪无痕网【平特一尾】788840a.com
 澳门踏雪无痕

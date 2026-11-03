@@ -1,0 +1,25 @@
+# --- 生成物与本地临时文件（统一清理时补充） ---
+# Python / runtime artifacts
+__pycache__/
+*.py[cod]
+.coverage
+.coverage.*
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+# Local locks, temp files, logs and backups
+*.lock
+*.tmp
+*.log
+*.bak
+*.before
+*.before_*
+*.orig
+*.rej
+nul
+# Browser profiles and build outputs
+browser-profile/
+build/
+dist/
+dist_*/
+.paddleocr-cpu-venv/

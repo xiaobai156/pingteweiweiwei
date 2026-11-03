@@ -71,7 +71,7 @@ def _read_cache(path: Path) -> dict:
     return value
 
 
-def _write_cache_unlocked(path: Path, cache: dict) -> None:
+def _write_cache_unlocked(path: Path, cache: dict, create_backup: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     backup = path.with_suffix(path.suffix + ".bak")
     temp_fd, temp_name = tempfile.mkstemp(
@@ -86,7 +86,7 @@ def _write_cache_unlocked(path: Path, cache: dict) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        if path.exists():
+        if path.exists() and create_backup:
             shutil.copy2(path, backup)
         os.replace(temp, path)
     finally:
@@ -358,6 +358,89 @@ def update_recent_10_cache(
             "sites": sites,
         }
         _write_cache_unlocked(cache_path, cache_data)
+        return True
+    finally:
+        release_lock(lock_fd, lock_path)
+
+
+def update_recent_10_cache_partial(
+    targets: list[Target],
+    results: list[str],
+    issue: str,
+    cache_path: Path,
+) -> bool:
+    if not results:
+        return True
+    issue_digits = re.sub(r"\D", "", normalize_digits(issue))
+    if not issue_digits:
+        return False
+    result_values = dict(
+        parsed for line in results if (parsed := value_from_result_line(line)) is not None
+    )
+    target_keys = [_target_cache_key(target) for target in targets]
+    target_labels = {target.label for target in targets}
+    if len(target_keys) != len(set(target_keys)):
+        return False
+    if not set(result_values).issubset(target_labels):
+        return False
+    lock_fd, lock_path = acquire_lock(cache_path)
+    try:
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        if not isinstance(cache, dict) or cache.get("schema") not in {1, 2}:
+            return False
+        if not isinstance(cache.get("sites"), list) or not isinstance(cache.get("issues", []), list):
+            return False
+        if not all(isinstance(item, dict) for item in cache["sites"]):
+            return False
+        updated = copy.deepcopy(cache)
+        sites = updated["sites"]
+        indexes = {_site_cache_key(site): index for index, site in enumerate(sites)}
+        for target in targets:
+            key = _target_cache_key(target)
+            index = indexes.get(key)
+            old_entry = sites[index] if index is not None else None
+            if old_entry is not None and not _rule_matches(old_entry, target):
+                return False
+            old_values = old_entry.get("values", {}) if old_entry is not None else {}
+            if not isinstance(old_values, dict):
+                return False
+            values = {
+                str(value_issue): str(value).strip()
+                for value_issue, value in old_values.items()
+                if str(value_issue).isdigit() and str(value).strip()
+            }
+            current_value = result_values.get(target.label)
+            if current_value:
+                current_value = normalize_digits(current_value)
+                if not VALUE_PATTERN.fullmatch(current_value):
+                    return False
+                old_value = normalize_digits(values.get(issue_digits, ""))
+                if old_value and old_value != current_value:
+                    return False
+                values[issue_digits] = current_value
+            site = _new_site(target)
+            if not target.target_id:
+                site.pop("target_id")
+                site.pop("parser_id")
+                site.pop("rule_version")
+            site["values"] = values
+            if index is None:
+                indexes[key] = len(sites)
+                sites.append(site)
+            else:
+                sites[index] = site
+        known_issues = {
+            int(value)
+            for value in updated.get("issues", [])
+            if str(value).isdigit()
+        }
+        known_issues.add(int(issue_digits))
+        updated["issues"] = sorted(known_issues, reverse=True)[:RECENT_10_WINDOW]
+        updated["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        _write_cache_unlocked(cache_path, updated, create_backup=False)
         return True
     finally:
         release_lock(lock_fd, lock_path)

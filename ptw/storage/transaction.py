@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Callable
 
 from ptw.domain.models import Target
-from ptw.storage.atomic import atomic_restore_bytes, atomic_write_pair_with_backup
+from ptw.storage.atomic import atomic_restore_bytes, atomic_write_success_optional_failure
 
 
 def commit_single_issue(
@@ -24,7 +24,7 @@ def commit_single_issue(
     if not update_cache(targets, results, issue):
         return False
     try:
-        atomic_write_pair_with_backup(
+        atomic_write_success_optional_failure(
             output_path,
             success_content,
             fail_path,

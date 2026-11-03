@@ -18,7 +18,7 @@ from ptw.text import decode_bytes, decode_document_writes, html_to_text
 
 
 USER_AGENT = "Mozilla/5.0 tail-fetcher/2.0"
-TRUSTED_EXTERNAL_SCRIPT_SUFFIXES = (".cosds.ahsccn.com",)
+TRUSTED_EXTERNAL_SCRIPT_SUFFIXES = (".cosds.ahsccn.com", ".cosds.aohjifv.com")
 
 
 def _is_trusted_external_script_host(host: str) -> bool:

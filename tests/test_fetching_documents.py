@@ -82,7 +82,20 @@ class FetchDocumentTests(unittest.TestCase):
         self.assertEqual("script", documents[1].document_type)
         self.assertIn(script_url, [call[0] for call in session.calls])
 
+    def test_http_allows_verified_cdn_script_host(self):
+        url = "https://example.test/topic/1"
+        script_url = "https://xia01.cosds.aohjifv.com/upload/script/a.js"
+        session = FakeSession(
+            {
+                url: f'<script src="{script_url}"></script>',
+                script_url: "目标模块 211期 平特一尾【4】",
+            }
+        )
+        documents = fetch_documents(url, session=session)
+        self.assertEqual("script", documents[1].document_type)
+
     def test_http_rejects_untrusted_external_data_script_host(self):
+
         url = "https://example.test/topic/1"
         script_url = "https://evil.example/upload/script/foreign.js"
         session = RecordingSession({url: f'<script src="{script_url}"></script>'})

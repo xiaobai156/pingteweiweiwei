@@ -168,7 +168,10 @@ def run_single_issue(
             )
         else:
             dependencies.atomic_write(output_path, success_content)
-            dependencies.atomic_write(resolved_fail_path, failure_content)
+            if failure_content.strip():
+                dependencies.atomic_write(resolved_fail_path, failure_content)
+            elif resolved_fail_path.exists():
+                resolved_fail_path.unlink()
     if errors:
         dependencies.log(f"Failure file: {resolved_fail_path.resolve()}")
     return results, errors

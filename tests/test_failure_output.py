@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from multi_issue_fetcher import dated_multi_issue_files, run_multi
 from ptw.domain.models import Target
+from ptw.storage.atomic import atomic_write_success_optional_failure
 from ptw.storage.output import format_failure_output
 from tail_fetcher import run
 
@@ -94,6 +95,39 @@ class FailureOutputTests(unittest.TestCase):
                 "失败分类统计\n"
                 "指定期数缺失 1条\n",
             )
+
+
+class SingleIssueFailureFileCreationTests(unittest.TestCase):
+    def test_blank_failure_content_does_not_create_failure_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            success = Path(tmp) / "success.txt"
+            failure = Path(tmp) / "failure.txt"
+
+            atomic_write_success_optional_failure(success, "3尾 甲\n", failure, "")
+
+            self.assertEqual("3尾 甲\n", success.read_text(encoding="utf-8"))
+            self.assertFalse(failure.exists())
+
+    def test_blank_failure_content_removes_stale_failure_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            success = Path(tmp) / "success.txt"
+            failure = Path(tmp) / "failure.txt"
+            failure.write_text("旧的失败内容\n", encoding="utf-8")
+
+            atomic_write_success_optional_failure(success, "3尾 甲\n", failure, "  \n")
+
+            self.assertEqual("3尾 甲\n", success.read_text(encoding="utf-8"))
+            self.assertFalse(failure.exists())
+
+    def test_non_blank_failure_content_writes_both_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            success = Path(tmp) / "success.txt"
+            failure = Path(tmp) / "failure.txt"
+
+            atomic_write_success_optional_failure(success, "3尾 甲\n", failure, "失败 乙\n")
+
+            self.assertEqual("3尾 甲\n", success.read_text(encoding="utf-8"))
+            self.assertEqual("失败 乙\n", failure.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -442,6 +442,36 @@ class DocumentBoundaryTests(unittest.TestCase):
                 self.assertEqual("", record.result)
                 self.assertIn("MULTIPLE_DOCUMENT_CANDIDATES", record.risk_flags)
                 self.assertFalse(is_publishable(record))
+    def test_explicit_top_priority_conflict_selects_first_document(self):
+        text = serialize_documents(
+            [
+                FetchDocument(
+                    "https://example.test/script-1.js",
+                    "script",
+                    "script-1",
+                    "藏宝图规律一尾\n267期 平特3尾",
+                    original_order=1,
+                ),
+                FetchDocument(
+                    "https://example.test/script-2.js",
+                    "script",
+                    "script-2",
+                    "藏宝图规律一尾\n267期 平特7尾",
+                    original_order=2,
+                ),
+            ]
+        )
+        target = Target(
+            "https://example.test/topic/1",
+            "顶部",
+            "藏宝图",
+            "藏宝图规律一尾",
+            "top_priority_conflict",
+        )
+        record = audit_result_from_text(text, "267", target)
+        self.assertEqual("3尾 藏宝图", record.result)
+        self.assertIn("TOP_PRIORITY_CONFLICT_SELECTED", record.risk_flags)
+        self.assertTrue(is_publishable(record))
 
 
 if __name__ == "__main__":

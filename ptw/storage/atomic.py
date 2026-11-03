@@ -134,6 +134,125 @@ def atomic_write_pair_with_backup(
             release_lock(lock_fd, lock_path)
 
 
+def atomic_write_without_backup(path: Path, content: str) -> None:
+    lock_fd, lock_path = acquire_lock(path)
+    temp_path: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_fd, temp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+        )
+        temp_path = Path(temp_name)
+        with os.fdopen(temp_fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink()
+        release_lock(lock_fd, lock_path)
+
+
+def atomic_write_success_optional_failure(
+    success_path: Path,
+    success_content: str,
+    fail_path: Path,
+    failure_content: str,
+    backup: bool = True,
+) -> None:
+    """单期写盘：成功文件必写；失败内容为空时不生成失败文件，并删除旧失败文件。"""
+    if failure_content.strip():
+        if backup:
+            atomic_write_pair_with_backup(
+                success_path,
+                success_content,
+                fail_path,
+                failure_content,
+            )
+        else:
+            atomic_write_pair_without_backup(
+                success_path,
+                success_content,
+                fail_path,
+                failure_content,
+            )
+        return
+    if backup:
+        atomic_write_with_backup(success_path, success_content)
+    else:
+        atomic_write_without_backup(success_path, success_content)
+    if fail_path.exists() and fail_path.is_file():
+        lock_fd, lock_path = acquire_lock(fail_path)
+        try:
+            if fail_path.exists() and fail_path.is_file():
+                fail_path.unlink()
+        finally:
+            release_lock(lock_fd, lock_path)
+
+
+def atomic_write_pair_without_backup(
+    first_path: Path,
+    first_content: str,
+    second_path: Path,
+    second_content: str,
+) -> None:
+    if first_path.resolve() == second_path.resolve():
+        raise ValueError("成对原子写入不能使用同一文件")
+    lock_info: list[tuple[int, Path]] = []
+    temp_paths: dict[Path, Path] = {}
+    originals: dict[Path, bytes | None] = {}
+    contents = {first_path: first_content, second_path: second_content}
+    try:
+        for path in sorted((first_path, second_path), key=lambda item: str(item.resolve())):
+            lock_info.append(acquire_lock(path))
+        for path in (first_path, second_path):
+            originals[path] = path.read_bytes() if path.exists() else None
+            temp_fd, temp_name = tempfile.mkstemp(
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                dir=path.parent,
+            )
+            temp_path = Path(temp_name)
+            temp_paths[path] = temp_path
+            with os.fdopen(temp_fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write(contents[path])
+                handle.flush()
+                os.fsync(handle.fileno())
+        for path in (first_path, second_path):
+            os.replace(temp_paths[path], path)
+    except Exception:
+        for path, original in originals.items():
+            if original is None:
+                if path.exists() and path.is_file():
+                    path.unlink()
+                continue
+            restore_fd, restore_name = tempfile.mkstemp(
+                prefix=f".{path.name}.restore.",
+                suffix=".tmp",
+                dir=path.parent,
+            )
+            restore_path = Path(restore_name)
+            try:
+                with os.fdopen(restore_fd, "wb") as handle:
+                    handle.write(original)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(restore_path, path)
+            finally:
+                if restore_path.exists():
+                    restore_path.unlink()
+        raise
+    finally:
+        for temp_path in temp_paths.values():
+            if temp_path.exists():
+                temp_path.unlink()
+        for lock_fd, lock_path in reversed(lock_info):
+            release_lock(lock_fd, lock_path)
+
+
 def atomic_restore_bytes(path: Path, content: bytes | None) -> None:
     lock_fd, lock_path = acquire_lock(path)
     temp_path: Path | None = None
