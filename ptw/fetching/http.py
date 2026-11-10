@@ -132,9 +132,14 @@ def _fetch_with_session(url: str, timeout: int, session) -> list[FetchDocument]:
             if not _is_trusted_external_script_host(script_host):
                 raise RuntimeError(f"脚本来源不在白名单：{full_url}")
         try:
-            script_source = _decoded_response(
-                session.get(full_url, timeout=timeout, verify=True, headers=headers)
+            script_response = session.get(
+                full_url, timeout=timeout, verify=True, headers=headers
             )
+            if getattr(script_response, "status_code", 200) == 404:
+                # 脚本 404 表示该文件已被站点删除，属资源缺失而非抓取异常：跳过即可，
+                # 主文档照常解析；若数据本在脚本内，解析会以无结果失败上报，不会被静默放过。
+                continue
+            script_source = _decoded_response(script_response)
         except Exception as exc:
             raise RuntimeError(f"脚本抓取失败：{full_url}: {exc}") from exc
         document_id = f"script-{len(documents)}"

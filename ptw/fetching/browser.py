@@ -124,6 +124,9 @@ class BrowserFetcher:
                     for suffix in TRUSTED_EXTERNAL_SCRIPT_SUFFIXES
                 ):
                     raise RuntimeError(f"脚本来源不在白名单：{script_url}")
+            if response.status == 404:
+                # 脚本文件已被站点删除，属资源缺失而非抓取异常：跳过，主文档照常解析。
+                continue
             if response.status >= 400:
                 raise RuntimeError(f"脚本抓取失败：{script_url}: HTTP {response.status}")
             script_source = decode_bytes(response.body())
