@@ -1,7 +1,9 @@
 import threading
+import time
 import urllib.parse
 from datetime import datetime, timezone
 
+from playwright.sync_api import Error
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -14,6 +16,22 @@ from ptw.fetching.http import (
     fetch_text,
 )
 from ptw.text import decode_bytes
+
+
+BROWSER_FETCH_ATTEMPTS = 3
+
+
+def _is_transient_playwright_error(exc: Exception) -> bool:
+    text = str(exc)
+    markers = (
+        "ERR_SSL",
+        "ERR_CONNECTION",
+        "ERR_TIMED_OUT",
+        "ERR_EMPTY_RESPONSE",
+        "ERR_NETWORK_CHANGED",
+        "ERR_CLOSED",
+    )
+    return any(marker in text for marker in markers)
 
 
 class BrowserFetcher:
@@ -30,6 +48,23 @@ class BrowserFetcher:
     def fetch(self, url: str, timeout: int = 20) -> str:
         if "/article/manager/" in url:
             return fetch_text(url, timeout)
+        last_exc = None
+        for attempt in range(BROWSER_FETCH_ATTEMPTS):
+            try:
+                return self._fetch_once(url, timeout)
+            except PlaywrightTimeoutError as exc:
+                last_exc = exc
+            except Error as exc:
+                # net::ERR_SSL_* / ERR_CONNECTION_* 等瞬时网络故障，有限重试
+                if not _is_transient_playwright_error(exc):
+                    raise
+                last_exc = exc
+            if attempt + 1 < BROWSER_FETCH_ATTEMPTS:
+                time.sleep(1 + attempt)
+        assert last_exc is not None
+        raise last_exc
+
+    def _fetch_once(self, url: str, timeout: int) -> str:
         with self._lock:
             page = self._browser.new_page()
             responses = []

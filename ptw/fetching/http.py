@@ -1,6 +1,7 @@
 import json
 import re
 import ssl
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -18,6 +19,7 @@ from ptw.text import decode_bytes, decode_document_writes, html_to_text
 
 
 USER_AGENT = "Mozilla/5.0 tail-fetcher/2.0"
+TRANSIENT_FETCH_ATTEMPTS = 3
 TRUSTED_EXTERNAL_SCRIPT_SUFFIXES = (".cosds.ahsccn.com", ".cosds.aohjifv.com")
 
 
@@ -89,9 +91,35 @@ def _append_json_documents(
         )
 
 
+def _get_with_retry(session, url: str, timeout: int, headers: dict):
+    """对间歇性 TLS/连接中断（如 SSLEOFError）做有限重试，其它错误直接抛出。"""
+    last_exc = None
+    for attempt in range(TRANSIENT_FETCH_ATTEMPTS):
+        try:
+            return session.get(url, timeout=timeout, verify=True, headers=headers)
+        except (ssl.SSLError, OSError) as exc:
+            last_exc = exc
+        except Exception as exc:
+            # requests 的连接类异常（ConnectionError 等）同样属于瞬时故障
+            if not _is_transient_connection_error(exc):
+                raise
+            last_exc = exc
+        if attempt + 1 < TRANSIENT_FETCH_ATTEMPTS:
+            time.sleep(1 + attempt)
+    raise last_exc
+
+
+def _is_transient_connection_error(exc: Exception) -> bool:
+    name = type(exc).__name__
+    if name in {"ConnectionError", "Timeout", "ChunkedEncodingError", "SSLError"}:
+        return True
+    text = str(exc)
+    return "SSLEOFError" in text or "Max retries exceeded" in text
+
+
 def _fetch_with_session(url: str, timeout: int, session) -> list[FetchDocument]:
     headers = {"User-Agent": USER_AGENT}
-    response = session.get(url, timeout=timeout, verify=True, headers=headers)
+    response = _get_with_retry(session, url, timeout, headers)
     source = _decoded_response(response)
     fetched_at = datetime.now().isoformat(timespec="seconds")
     documents = [_text_document(url, "html", "main", source, 0, fetched_at)]
@@ -132,9 +160,7 @@ def _fetch_with_session(url: str, timeout: int, session) -> list[FetchDocument]:
             if not _is_trusted_external_script_host(script_host):
                 raise RuntimeError(f"脚本来源不在白名单：{full_url}")
         try:
-            script_response = session.get(
-                full_url, timeout=timeout, verify=True, headers=headers
-            )
+            script_response = _get_with_retry(session, full_url, timeout, headers)
             if getattr(script_response, "status_code", 200) == 404:
                 # 脚本 404 表示该文件已被站点删除，属资源缺失而非抓取异常：跳过即可，
                 # 主文档照常解析；若数据本在脚本内，解析会以无结果失败上报，不会被静默放过。
